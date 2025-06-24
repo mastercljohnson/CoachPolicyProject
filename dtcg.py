@@ -32,62 +32,62 @@ class DecisionTransformer(nn.Module):
         self.action_spaces = action_spaces        # Placeholder for action spaces
         
         # Define the embeddings for RL here, basically cast all things to embedding size
-        self.embed_timestep = nn.Embedding(max_ep_len, self.hidden_size)
-        self.embed_return = torch.nn.Linear(1, self.hidden_size) # lol scalar to vector
-        self.embed_state = torch.nn.Linear(self.state_dim, hidden_size)
-        self.embed_action = torch.nn.Linear(self.action_dim, hidden_size)
+        # self.embed_timestep = nn.Embedding(max_ep_len, self.hidden_size)
+        # self.embed_return = torch.nn.Linear(1, self.hidden_size) # lol scalar to vector
+        # self.embed_state = torch.nn.Linear(self.state_dim, hidden_size)
+        # self.embed_action = torch.nn.Linear(self.action_dim, hidden_size)
 
-        self.embed_ln = nn.LayerNorm(hidden_size)
+        # self.embed_ln = nn.LayerNorm(hidden_size)
 
-        # note: we don't predict states or returns for the paper
-        self.predict_state = torch.nn.Linear(hidden_size, self.state_dim)
-        # tanh scales between -1 and 1, which is useful for some action spaces?
-        self.predict_action = nn.Sequential(
-            *([nn.Linear(hidden_size, self.act_dim)] + ([nn.Tanh()] if action_tanh else []))
-        )
-        self.predict_return = torch.nn.Linear(hidden_size, 1)
+        # # note: we don't predict states or returns for the paper
+        # self.predict_state = torch.nn.Linear(hidden_size, self.state_dim)
+        # # tanh scales between -1 and 1, which is useful for some action spaces?
+        # self.predict_action = nn.Sequential(
+        #     *([nn.Linear(hidden_size, self.action_dim)] + ([nn.Tanh()] if action_tanh else []))
+        # )
+        # self.predict_return = torch.nn.Linear(hidden_size, 1)
         
-        # Define the transformer layer here, assume context window is max_ep_len* 3* timesteps (R_t,s_t, a_t) is a single timestep 
-        self.transformer = TransformerDecoder(num_heads=3, num_input_tokens=3*max_ep_len, encode_dim=hidden_size, key_dim=hidden_size // 3, value_dim=hidden_size // 3,num_blocks=2)
+        # # Define the transformer layer here, assume context window is max_ep_len* 3* timesteps (R_t,s_t, a_t) is a single timestep 
+        # self.transformer = TransformerDecoder(num_heads=3, num_input_tokens=3*max_ep_len, encode_dim=hidden_size, key_dim=hidden_size // 3, value_dim=hidden_size // 3,num_blocks=2)
 
     # Just copy the implementation from the Decision Transformer paper code
     # rewards doesnt seem like its used here
     def forward(self, obs, actions, rewards,  returns_to_go, timesteps, attention_mask=None):
         # Implement the forward pass for the Decision Transformer
 
-        batch_size, seq_length = obs.shape[0], obs.shape[1]
+        # batch_size, seq_length = obs.shape[0], obs.shape[1]
 
-        # TODO: not sure what this attention mask is for?
-        if attention_mask is None:
-            # attention mask for GPT: 1 if can be attended to, 0 if not
-            attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
+        # # TODO: not sure what this attention mask is for?
+        # if attention_mask is None:
+        #     # attention mask for GPT: 1 if can be attended to, 0 if not
+        #     attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
 
-        # embed each modality with a different head
-        state_embeddings = self.embed_state(obs)
-        action_embeddings = self.embed_action(actions)
-        returns_embeddings = self.embed_return(returns_to_go)
-        time_embeddings = self.embed_timestep(timesteps)
+        # # embed each modality with a different head
+        # state_embeddings = self.embed_state(obs)
+        # action_embeddings = self.embed_action(actions)
+        # returns_embeddings = self.embed_return(returns_to_go)
+        # time_embeddings = self.embed_timestep(timesteps)
 
-        # time embeddings are treated similar to positional embeddings
-        state_embeddings = state_embeddings + time_embeddings
-        action_embeddings = action_embeddings + time_embeddings
-        returns_embeddings = returns_embeddings + time_embeddings
+        # # time embeddings are treated similar to positional embeddings
+        # state_embeddings = state_embeddings + time_embeddings
+        # action_embeddings = action_embeddings + time_embeddings
+        # returns_embeddings = returns_embeddings + time_embeddings
 
-        # TODO: why this permutation way?
-        # this makes the sequence look like (R_1, s_1, a_1, R_2, s_2, a_2, ...)
-        # which works nice in an autoregressive sense since states predict actions
-        stacked_inputs = torch.stack(
-            (returns_embeddings, state_embeddings, action_embeddings), dim=1
-        ).permute(0, 2, 1, 3).reshape(batch_size, 3*seq_length, self.hidden_size)
-        stacked_inputs = self.embed_ln(stacked_inputs) # apply layernorm over inputs
+        # # TODO: why this permutation way?
+        # # this makes the sequence look like (R_1, s_1, a_1, R_2, s_2, a_2, ...)
+        # # which works nice in an autoregressive sense since states predict actions
+        # stacked_inputs = torch.stack(
+        #     (returns_embeddings, state_embeddings, action_embeddings), dim=1
+        # ).permute(0, 2, 1, 3).reshape(batch_size, 3*seq_length, self.hidden_size)
+        # stacked_inputs = self.embed_ln(stacked_inputs) # apply layernorm over inputs
 
-        # questions here about attention mask
-        transformer_outputs = self.transformer.forward(stacked_inputs)
+        # # questions here about attention mask
+        # transformer_outputs = self.transformer.forward(stacked_inputs)
         
-        x = transformer_outputs.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
+        # x = transformer_outputs.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
 
-        # The last hidden state is used for prediction, this is the output of the current implementation I think
-        action_preds = self.predict_action(x[:,1])  # predict next action given state
+        # # The last hidden state is used for prediction, this is the output of the current implementation I think
+        # action_preds = self.predict_action(x[:,1])  # predict next action given state
 
 
         return {agent_id: action_space.sample() for agent_id, action_space in self.action_spaces.items()}
@@ -175,7 +175,7 @@ class DTCG(nn.Module):
         self.decision_transformer = DecisionTransformer(
             state_dim=128,  # Example state dimension
             action_dim=4,   # Example action dimension
-            hidden_dim=256, # Example hidden dimension
+            hidden_size=256, # Example hidden dimension
             num_layers=6,    # Example number of layers
             max_ep_len=4096,  # Example maximum episode length
             observation_spaces=self.observation_spaces,
@@ -183,7 +183,7 @@ class DTCG(nn.Module):
         )
 
     def act(self, total_obs):
-        suggested_actions = self.decision_transformer.forward(total_obs)
+        suggested_actions = self.decision_transformer.forward(total_obs, None, None, None, None)  # Placeholder for actions from Decision Transformer
         total_actions = {}
         
         # communication between agents
