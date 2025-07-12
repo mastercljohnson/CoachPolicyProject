@@ -1,1 +1,4 @@
 shakespeare_checkpoints/
+generated_text/
+shakespeare_char/
+*.pyc

@@ -6,13 +6,16 @@ from transformer_decoder import TransformerDecoder
 from contextlib import nullcontext
 import torch_directml
 import math
+import tiktoken
 # from shakespeare_prep.prepare import train_ids, val_ids
 
-# block_size = 256  # Input size
-block_size = 30  # Input size
+block_size = 256  # Input size
+torch.manual_seed(42)
+np.random.seed(42)
 
 # poor man's data loader
 data_dir = os.path.join('shakespeare_prep')
+
 def get_batch(split):
     # We recreate np.memmap every batch to avoid a memory leak, as per
     # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
@@ -48,35 +51,39 @@ def estimate_loss():
     return out
 
 if __name__ == "__main__":
-    
+
+    #  shakespeare dataset is encoded using tiktoken
+    enc = tiktoken.get_encoding("gpt2")
+    encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+    decode = lambda l: enc.decode(l)
 
     # Set device
-    device_type = 'privateuseone'  # Use 'cpu' for CPU, 'cuda' for nvidia GPU, or 'dml' for DirectML
-    # ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=torch.float32)
-    # device = torch.device("cpu")
     device = torch_directml.device()  # Use DirectML for GPU acceleration
-    print(f"Using device: {device}")
 
     # Transformer Hyperparameters from https://github.com/karpathy/nanoGPT/blob/master/config/train_shakespeare_char.py
-    num_heads = 4
-    num_blocks = 4  # Number of transformer blocks
-    # num_input_tokens = 256  # Input size
-    num_input_tokens = 30  # Input size
-    encode_dim = 384  # Example encoding dimension
-    key_dim = 64  # Example key dimension
-    value_dim = 64  # Example value dimension
+    num_heads = 3
+    num_blocks = 3  # Number of transformer blocks
+    vocab_size = 50257  # Size of the vocabulary, e.g., number of unique characters in the dataset, set to GPT-2's vocab size
+    num_input_tokens = block_size  # Input size
+    encode_dim = 256  # Example encoding dimension
+    key_dim = value_dim = encode_dim // num_heads  # Set key and value dimensions to be equal to encode_dim divided by number of heads
+
 
     # Training params
-    # batch_size = 64  # Example batch size
-    batch_size = 5  # Example batch size
+    batch_size = 16  # Example batch size
+    gradient_accumulation_steps = 1 # used to simulate larger batch sizes
+    
     learning_rate = 1e-3 # with baby networks can afford to go a bit higher
-    max_iters = 2000
-    lr_decay_iters = 2000 # make equal to max_iters usually
-    warmup_iters = 100 # usually 0.1 * lr_decay_iters
-    min_lr = 1e-4 # learning_rate / 10 usually
+    max_iters = 8000
+    lr_decay_iters = 8000 # make equal to max_iters usually
+    warmup_iters = 200 # usually 0.1 * lr_decay_iters
+    min_lr = 1e-5 # learning_rate / 10 usually
     beta1 = 0.9 # momentum term for Adam optimizer
     beta2 = 0.99 # make a bit bigger because number of tokens per iter is small
-    weight_decay = 1e-1 # L2 regularization term
+    weight_decay = 1e-2 # L2 regularization term
+    # dropout = 0.1
+    dropout = 0.1
+    grad_clip = 1.0  # Gradient clipping to prevent exploding gradients
 
     # learning rate decay scheduler (cosine with warmup)
     #  See if validation loss decreases after scheduler implemented
@@ -93,57 +100,90 @@ if __name__ == "__main__":
         coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
         return min_lr + coeff * (learning_rate - min_lr)
 
-    gradient_accumulation_steps = 10 # used to simulate larger batch sizes
-
-    # warmup_iters = 100
-
-    vocab_size = 50304  # Size of the vocabulary, e.g., number of unique characters in the dataset
-    
-
     # Initialize the transformer decoder model
-    model = TransformerDecoder(num_heads, num_input_tokens, encode_dim, key_dim, value_dim, num_blocks, vocab_size).to(device)
+    model = TransformerDecoder(num_heads, num_input_tokens, encode_dim, key_dim, value_dim, num_blocks, vocab_size,dropout).to(device)
+
+    assert model.vocab_size == enc.n_vocab
+
+    def init_weights(m):
+        if isinstance(m, torch.nn.Linear):
+            torch.nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                torch.nn.init.zeros_(m.bias)
+        elif isinstance(m, torch.nn.Embedding):
+            torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
+    
+    model.apply(init_weights)  # Initialize model weights, hopefully this helps convergence?
+    model.output_projection.weight = model.embedding.weight
 
     # TODO: optimizer, are the right model parameters being optimized? Check
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay)
     print(f"Model parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
-    # Training loop (simplified)
-    X,Y = get_batch('train')  # Get a batch of training data
-    # print(X,Y)
-    # model.train()
+    # from collections import Counter
+    # data = np.memmap("shakespeare_prep/train.bin", dtype=np.uint16, mode='r')
+    # counts = Counter(data[:10000])
+    # print(counts.most_common(20))
+    # print("Max token ID:", max(data[:10000]))
+
+    
+    # x, y = get_batch("train")
+    # for i in range(200):
+    #     logits, loss = model(x, y)
+    #     loss.backward()
+    #     optimizer.step()
+    #     optimizer.zero_grad()
+    #     print(f"Overfit step {i}: loss={loss.item():.4f}")
+
+    # Training loop
+    model.train()
     iter_num = 0
     # eval_interval = 2000
-    eval_interval = 20
+    eval_interval = 40
     best_eval_loss = float('inf')  # Initialize best validation loss
     while True:
 
         # Update learning rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = get_lr(iter_num)
+            # param_group['lr'] = learning_rate
 
         if iter_num % eval_interval == 0:
             losses = estimate_loss()
-            print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+            print(f"step {iter_num}: lr {optimizer.param_groups[0]['lr']:.6e}, train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
             if losses['val'] < best_eval_loss:
                 best_eval_loss = losses['val']
                 print(f"New best validation loss: {best_eval_loss:.4f} at step {iter_num}")
                 checkpoint = model.state_dict()
                 torch.save(checkpoint, f"./shakespeare_checkpoints/shakespeare_{iter_num}.pth")
+
+                context = torch.tensor([[enc.encode("ROMEO", allowed_special={"<|endoftext|>"})[0]]], dtype=torch.long).to(device)
+
+                gen_output = model.generate(context, max_length=256)  # Generate text from the model
+                file_content = decode(gen_output[0].tolist())
+                with open(f"./generated_text/shakespeare_{iter_num}_gen.txt", "w") as f:
+                    f.write(file_content)
             
-        
+        model.train()
+        optimizer.zero_grad()
         for micro_step in range(gradient_accumulation_steps):
-            # print(X.shape, Y.shape)
-            logits, loss = model(X, Y)
-            # print("gets loss and predict")
-            loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
-
-            # print(f"Average loss over gradient accumulation steps {loss.item():.4f}")
-            
             X, Y = get_batch('train')
-
+            assert X.max().item() < model.vocab_size
+            label_smoothing = 0.0 if iter_num < 2000 else 0.1
+            logits, loss = model(X, Y, label_smoothing=label_smoothing)  # Forward pass through the model
+            loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
             loss.backward()  # Backpropagation
-            optimizer.step()  # Update model parameters
-            optimizer.zero_grad()
+            if torch.isnan(loss) or torch.isinf(loss):
+                print("Warning: loss is NaN or Inf")
+            
+        # if iter_num % 100 == 0:    
+        #     for name, p in model.named_parameters():
+        #         if p.grad is not None:
+        #             print(name, p.grad.norm().item())
+        #             # break
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip) # Clip gradients to prevent exploding gradients
+        optimizer.step()  # Update model parameters
+        
         
         iter_num += 1
 

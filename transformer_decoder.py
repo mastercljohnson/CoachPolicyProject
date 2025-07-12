@@ -27,16 +27,19 @@ class AttentionHead(nn.Module):
         K = self.keys(K) # {h, d_model} -> {h, d_k}
         Q = self.queries(Q) # {h, d_model} -> {h, d_k}
         V = self.values(V) # {h, d_model} -> {h, d_v}
-        # print(f"K Q V {K.shape}, {Q.shape}, {V.shape}")
 
 
+        # Q, K, V are [B, T, d_model] -> transform -> [B, T, d_k]
         x = torch.matmul(Q, K.transpose(-2, -1))
+        x = x = x / (self.key_dim ** 0.5) # Scale the attention scores by the square root of the key dimension
         # Note we set the upper triangular part to -inf because 
         # we are viewing these as row vectors and the causal relation in the columns
-        tril = torch.tril(torch.ones(self.num_input_tokens, self.num_input_tokens)).to('privateuseone')# Create a lower triangular mask
-        x = x.masked_fill(tril == 0, float('-inf')) # Mask out the padding tokens
-        x_scaled = torch.div(x, self.key_dim**0.5)
-        x_scaled = nn.functional.softmax(x_scaled,dim=-1)
+        T= Q.size(1)
+        tril = torch.tril(torch.ones(T, T)).to('privateuseone')# Create a lower triangular mask
+        mask = tril.unsqueeze(0).expand(x.size(0), -1, -1)
+        # x = x.masked_fill(tril == 0, float('-inf')) # Mask out the padding tokens
+        x = x.masked_fill(mask == 0, float('-inf')) # Mask out the padding tokens
+        x_scaled = nn.functional.softmax(x,dim=-1)
 
         x_scaled = self.attn_dropout(x_scaled) # Apply dropout to the attention scores
 
@@ -44,33 +47,25 @@ class AttentionHead(nn.Module):
         return attention_head_output
     
 class MultiHeadAttention(nn.Module):
-    def __init__(self, num_heads, num_input_tokens, encode_dim, key_dim, value_dim):
+    def __init__(self, num_heads, num_input_tokens, encode_dim, key_dim, value_dim,dropout=0.2):
         super().__init__()
         self.num_heads = num_heads
         self.encode_dim = encode_dim
         self.key_dim = key_dim
         self.value_dim = value_dim
 
-        
-
         # Initialize the attention heads
         # encode dimensions is split among heads to detect different things
         self.attention_heads = nn.ModuleList([
-            AttentionHead(num_input_tokens, encode_dim, key_dim, value_dim) for _ in range(num_heads)
+            AttentionHead(num_input_tokens, encode_dim, key_dim, value_dim,dropout) for _ in range(num_heads)
         ])
 
         self.linear = nn.Linear(num_heads * value_dim, encode_dim) # {h, d_v} -> {h, d_model}
 
     def forward(self, K, Q, V):
-        
-        B_k, T_k, C_k = K.size()
-        B_q, T_q, C_q = Q.size()
-        B_v, T_v, C_v = V.size()
-        # print(f"key B T C {B_k}, {T_k}, {C_k} ")
-        # print(f"query B T C {B_q}, {T_q}, {C_q}")
-        # print(f"value B T C {B_v}, {T_v}, {C_v}")
-
-
+        # B_k, T_k, C_k = K.size()
+        # B_q, T_q, C_q = Q.size()
+        # B_v, T_v, C_v = V.size()
         outputs = [head(K, Q, V) for head in self.attention_heads]
         concat_outputs = torch.cat(outputs, dim=-1) # Concatenate along the last dimension (B, T, n_head * output_dim)
         return self.linear(concat_outputs)
@@ -81,7 +76,7 @@ class FeedForward(nn.Module):
         self.encode_dim = encode_dim # d_model
         self.network = nn.Sequential(
             nn.Linear(encode_dim, 4 * encode_dim), # {h, d_model} -> {h, 4 * d_model}
-            nn.ReLU(), # Apply ReLU activation
+            nn.GELU(), # Change from relu to gelu activation
             nn.Linear(4 * encode_dim, encode_dim), # {h, 4 * d_model} -> {h, d_model}
             nn.Dropout(dropout) # Apply dropout
         )
@@ -92,7 +87,7 @@ class FeedForward(nn.Module):
 
 # TODO:Check again if this is correct.
 class TransformerBlock(nn.Module):
-    def __init__(self, num_heads, num_input_tokens, encode_dim, key_dim, value_dim):
+    def __init__(self, num_heads, num_input_tokens, encode_dim, key_dim, value_dim,dropout=0.2):
         super().__init__()
         self.num_heads = num_heads
         self.encode_dim = encode_dim
@@ -100,8 +95,8 @@ class TransformerBlock(nn.Module):
         self.value_dim = value_dim
         
         # Initialize multi-head attention and feedforward network
-        self.multi_head_attention = MultiHeadAttention(num_heads, num_input_tokens, encode_dim, key_dim, value_dim)
-        self.feed_forward = FeedForward(encode_dim)
+        self.multi_head_attention = MultiHeadAttention(num_heads, num_input_tokens, encode_dim, key_dim, value_dim,dropout)
+        self.feed_forward = FeedForward(encode_dim, dropout) # Feedforward network with dropout
 
         # Initialize layer normalization
         self.layernorm_1 = nn.LayerNorm(encode_dim) # Layer normalization
@@ -110,15 +105,17 @@ class TransformerBlock(nn.Module):
     def forward(self, input):
         # Apply multi-head attention
         # TODO: Warning, not sure if i need to deep copy the input here.
-        attention_output = self.multi_head_attention(input, input, input) # K, Q, V are all the same in this case
+        layer_norm_1_output = self.layernorm_1(input)  # Apply layer normalization before attention
+
+        attention_output = self.multi_head_attention(layer_norm_1_output, layer_norm_1_output, layer_norm_1_output) # K, Q, V are all the same in this case
 
         # Add residual connection and apply layer normalization
-        layer_norm_1_output = input + self.layernorm_1(attention_output)  # Pass through the feedforward network
+        residual_1_output = input + attention_output # Pass through the feedforward network
 
-        feed_forward_output = self.feed_forward(layer_norm_1_output)
+        layer_norm_2_output = self.layernorm_2(residual_1_output)  # Apply layer normalization after attention
 
         # Apply second layer normalization
-        output = layer_norm_1_output + self.layernorm_2(feed_forward_output)
+        output = residual_1_output + self.feed_forward(layer_norm_2_output)
         
         return output
     
@@ -127,47 +124,47 @@ class TransformerDecoder(nn.Module):
         super().__init__()
         self.num_blocks = num_blocks
         self.vocab_size = vocab_size
+        self.num_input_tokens = num_input_tokens  # Number of input tokens
         self.embedding = nn.Embedding(vocab_size, encode_dim)  # Embedding layer to convert input tokens to vectors of size encode_dim
         self.dropout = nn.Dropout(dropout)  # Dropout layer to prevent overfitting
         self.transformer_blocks = nn.ModuleList([
             TransformerBlock(num_heads, num_input_tokens, encode_dim, key_dim, value_dim) for _ in range(num_blocks)
         ])
-        self.positional_encoding = torch.from_numpy(positional_encoding_matrix(num_input_tokens, encode_dim)).to('privateuseone')
-        # print(self.positional_encoding.dtype) float32
 
-        self.linear = nn.Linear(encode_dim, vocab_size, bias=False) # {h, d_model} -> {h, vocab_size}
+        pe = torch.from_numpy(positional_encoding_matrix(num_input_tokens, encode_dim)).float()
+        self.register_buffer("positional_encoding", pe)  # Register positional encoding as a buffer to avoid it being treated as a parameter
+
+        # self.linear = nn.Linear(encode_dim, vocab_size, bias=False) # {h, d_model} -> {h, vocab_size}
+        self.output_projection = nn.Linear(encode_dim, vocab_size, bias=False)  # Placeholder; we tie it below
+        # self.output_projection.weight = self.embedding.weight
 
     # Residual connection in transformer preserves positional encoding
-    def forward(self, input, targets=None):
+    def forward(self, input, targets=None, label_smoothing=0.0):
         input = self.embedding(input)  # Convert input tokens to vectors
-        # print(f"input shape {input.shape}")
-        # print(f"positional encoding shape {self.positional_encoding.shape}")
-        input = input + self.positional_encoding
-        # print("Successfully added positional encoding")
+        B, T, _ = input.shape
+        input = input + self.positional_encoding[:T, :].unsqueeze(0)  # Add positional encoding to the input
         input = self.dropout(input)  # Apply dropout to the input embeddings
         for block in self.transformer_blocks:
             input = block(input)
-            # print("hrnggggggg")
-        linear_output = self.linear(input)  # Apply linear transformation to the output of the last transformer block
-        # print("REACHES HERE")
+        # linear_output = self.linear(input)  # Apply linear transformation to the output of the last transformer block
+        linear_output = self.output_projection(input)  # Project to vocabulary size
+
         if targets is not None:
-            # If targets are provided, compute the loss
-            # print(f"linear output shape {linear_output.shape}")
-            # print(f"targets shape {targets.shape}")
-
-            # for i in range(targets.shape[0]):
-            #     if targets[i].max() >= self.vocab_size:
-            #         print(f"Warning: target {targets[i]} has values >= vocab_size {self.vocab_size}")
-            
-            # print("Finish checking target vocab size")
-
-            loss = nn.functional.cross_entropy(linear_output.view(-1, linear_output.size(-1)), targets.view(-1), ignore_index=-1)
-            # print(f"loss {loss}")
+            loss = nn.functional.cross_entropy(linear_output.view(-1, linear_output.size(-1)), targets.reshape(-1), ignore_index=-1, label_smoothing=label_smoothing)      
         else:
             loss = None
-        # return nn.functional.softmax(linear_output, dim=-1)
         
         return linear_output, loss
+    
+    @torch.no_grad()
+    def generate(self, input, max_length=20):
+        for _ in range(max_length):
+            cropped_input = input[:, -self.num_input_tokens:]  # Ensure input is within the max length
+            logits, _ = self.forward(cropped_input)
+            probs = torch.nn.functional.softmax(logits[:, -1, :], dim=-1)  # Get probabilities for the last token
+            next_token = torch.multinomial(probs, num_samples=1)
+            input = torch.cat([input, next_token], dim=1)
+        return input
     
 # if __name__ == "__main__":
 #     # Define the layers of the neural network and initialize weights and biases
