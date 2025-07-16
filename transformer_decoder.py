@@ -31,11 +31,11 @@ class AttentionHead(nn.Module):
 
         # Q, K, V are [B, T, d_model] -> transform -> [B, T, d_k]
         x = torch.matmul(Q, K.transpose(-2, -1))
-        x = x = x / (self.key_dim ** 0.5) # Scale the attention scores by the square root of the key dimension
+        x = x = x / float(self.key_dim ** 0.5) # Scale the attention scores by the square root of the key dimension
         # Note we set the upper triangular part to -inf because 
         # we are viewing these as row vectors and the causal relation in the columns
         T= Q.size(1)
-        tril = torch.tril(torch.ones(T, T)).to('privateuseone')# Create a lower triangular mask
+        tril = torch.tril(torch.ones(T, T, device=Q.device))# Create a lower triangular mask
         mask = tril.unsqueeze(0).expand(x.size(0), -1, -1)
         # x = x.masked_fill(tril == 0, float('-inf')) # Mask out the padding tokens
         x = x.masked_fill(mask == 0, float('-inf')) # Mask out the padding tokens
@@ -134,18 +134,25 @@ class TransformerDecoder(nn.Module):
         pe = torch.from_numpy(positional_encoding_matrix(num_input_tokens, encode_dim)).float()
         self.register_buffer("positional_encoding", pe)  # Register positional encoding as a buffer to avoid it being treated as a parameter
 
+        self.final_ln = nn.LayerNorm(encode_dim) # Final layer normalization before the output projection
+
         # self.linear = nn.Linear(encode_dim, vocab_size, bias=False) # {h, d_model} -> {h, vocab_size}
         self.output_projection = nn.Linear(encode_dim, vocab_size, bias=False)  # Placeholder; we tie it below
         # self.output_projection.weight = self.embedding.weight
 
     # Residual connection in transformer preserves positional encoding
     def forward(self, input, targets=None, label_smoothing=0.0):
+        input = input.to(torch.long)  # Ensure input is of type long for embedding lookup
         input = self.embedding(input)  # Convert input tokens to vectors
         B, T, _ = input.shape
-        input = input + self.positional_encoding[:T, :].unsqueeze(0)  # Add positional encoding to the input
+        input = input + 0.1 * self.positional_encoding[:T, :].unsqueeze(0)  # Add positional encoding to the input
         input = self.dropout(input)  # Apply dropout to the input embeddings
         for block in self.transformer_blocks:
             input = block(input)
+        
+        #  Apply layernorm before final layer projection, i think this is the final fix?
+        input = self.final_ln(input)  # Apply final layer normalization
+
         # linear_output = self.linear(input)  # Apply linear transformation to the output of the last transformer block
         linear_output = self.output_projection(input)  # Project to vocabulary size
 

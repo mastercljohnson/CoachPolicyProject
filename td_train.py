@@ -9,6 +9,8 @@ import math
 import tiktoken
 # from shakespeare_prep.prepare import train_ids, val_ids
 
+torch.set_default_dtype(torch.float32)  # Set default dtype to float32
+
 block_size = 256  # Input size
 torch.manual_seed(42)
 np.random.seed(42)
@@ -59,6 +61,7 @@ if __name__ == "__main__":
 
     # Set device
     device = torch_directml.device()  # Use DirectML for GPU acceleration
+    # device = torch.device('cpu')
 
     # Transformer Hyperparameters from https://github.com/karpathy/nanoGPT/blob/master/config/train_shakespeare_char.py
     num_heads = 3
@@ -68,22 +71,33 @@ if __name__ == "__main__":
     encode_dim = 256  # Example encoding dimension
     key_dim = value_dim = encode_dim // num_heads  # Set key and value dimensions to be equal to encode_dim divided by number of heads
 
+    #  debugging params
+    # num_heads = 2
+    # num_blocks = 2
+    # encode_dim = 64
+    # key_dim = value_dim = 32
+    # batch_size = 1
+    # gradient_accumulation_steps = 1
+    # dropout = 0
+    # learning_rate = 3e-4 # with baby networks can afford to go a bit higher
+    # weight_decay = 0 # L2 regularization term
+
 
     # Training params
     batch_size = 16  # Example batch size
-    gradient_accumulation_steps = 1 # used to simulate larger batch sizes
+    gradient_accumulation_steps = 4 # used to simulate larger batch sizes
     
-    learning_rate = 1e-3 # with baby networks can afford to go a bit higher
-    max_iters = 8000
-    lr_decay_iters = 8000 # make equal to max_iters usually
-    warmup_iters = 200 # usually 0.1 * lr_decay_iters
-    min_lr = 1e-5 # learning_rate / 10 usually
+    learning_rate = 5e-4 # with baby networks can afford to go a bit higher
+    max_iters = 4000
+    lr_decay_iters = 4000 # make equal to max_iters usually
+    warmup_iters = 400 # usually 0.1 * lr_decay_iters
+    min_lr = 5e-5 # learning_rate / 10 usually
     beta1 = 0.9 # momentum term for Adam optimizer
     beta2 = 0.99 # make a bit bigger because number of tokens per iter is small
     weight_decay = 1e-2 # L2 regularization term
-    # dropout = 0.1
-    dropout = 0.1
+    dropout = 0.2
     grad_clip = 1.0  # Gradient clipping to prevent exploding gradients
+    label_smoothing_start = 400  # Start applying label smoothing after this many iterations
 
     # learning rate decay scheduler (cosine with warmup)
     #  See if validation loss decreases after scheduler implemented
@@ -102,17 +116,23 @@ if __name__ == "__main__":
 
     # Initialize the transformer decoder model
     model = TransformerDecoder(num_heads, num_input_tokens, encode_dim, key_dim, value_dim, num_blocks, vocab_size,dropout).to(device)
+    print("Embedding dtype:", model.embedding.weight.dtype)
+    print("Positional encoding dtype:", model.positional_encoding.dtype)
+    print("Output projection weight dtype:", model.output_projection.weight.dtype)
+
 
     assert model.vocab_size == enc.n_vocab
 
     def init_weights(m):
         if isinstance(m, torch.nn.Linear):
+            # torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
             torch.nn.init.xavier_uniform_(m.weight)
             if m.bias is not None:
                 torch.nn.init.zeros_(m.bias)
         elif isinstance(m, torch.nn.Embedding):
             torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
     
+    torch.nn.init.normal_(model.embedding.weight, mean=0.0, std=0.02)
     model.apply(init_weights)  # Initialize model weights, hopefully this helps convergence?
     model.output_projection.weight = model.embedding.weight
 
@@ -126,20 +146,37 @@ if __name__ == "__main__":
     # print(counts.most_common(20))
     # print("Max token ID:", max(data[:10000]))
 
-    
+    #  This is overfit debug test
     # x, y = get_batch("train")
-    # for i in range(200):
+    # for i in range(300):
     #     logits, loss = model(x, y)
     #     loss.backward()
     #     optimizer.step()
+    #     print(f"Overfit step {i}, logits std: {logits.std().item():.4f}, mean: {logits.mean().item():.4f}, grad norm: {torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip):.4f}, loss: {loss.item():.4f}") 
     #     optimizer.zero_grad()
-    #     print(f"Overfit step {i}: loss={loss.item():.4f}")
+        
+    #     if i % 50 == 0:
+    #         context = torch.tensor([[enc.encode("ROMEO", allowed_special={"<|endoftext|>"})[0]]], dtype=torch.long).to(device)
+    #         gen_output = model.generate(context, max_length=256)  # Generate text from the model
+    #         file_content = decode(gen_output[0].tolist())
+    #         with open(f"./generated_text/overfit_shakespeare_{i}_gen.txt", "w") as f:
+    #             f.write(file_content)
+
+    checkpoint_path = "./shakespeare_checkpoints/shakespeare_1360.pth"
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        print(f"Loading checkpoint from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint)
+        optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', optimizer.state_dict()))
+        print("Checkpoint loaded successfully.")
+        
 
     # Training loop
     model.train()
     iter_num = 0
     # eval_interval = 2000
     eval_interval = 40
+    gen_interval = 200
     best_eval_loss = float('inf')  # Initialize best validation loss
     while True:
 
@@ -151,14 +188,16 @@ if __name__ == "__main__":
         if iter_num % eval_interval == 0:
             losses = estimate_loss()
             print(f"step {iter_num}: lr {optimizer.param_groups[0]['lr']:.6e}, train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-            if losses['val'] < best_eval_loss:
+            has_new_best_validation_loss = losses['val'] < best_eval_loss
+            if has_new_best_validation_loss:
                 best_eval_loss = losses['val']
                 print(f"New best validation loss: {best_eval_loss:.4f} at step {iter_num}")
                 checkpoint = model.state_dict()
                 torch.save(checkpoint, f"./shakespeare_checkpoints/shakespeare_{iter_num}.pth")
 
+            if iter_num % gen_interval == 0 or has_new_best_validation_loss:
+                print(f"Generating text at step {iter_num}...")
                 context = torch.tensor([[enc.encode("ROMEO", allowed_special={"<|endoftext|>"})[0]]], dtype=torch.long).to(device)
-
                 gen_output = model.generate(context, max_length=256)  # Generate text from the model
                 file_content = decode(gen_output[0].tolist())
                 with open(f"./generated_text/shakespeare_{iter_num}_gen.txt", "w") as f:
@@ -169,12 +208,22 @@ if __name__ == "__main__":
         for micro_step in range(gradient_accumulation_steps):
             X, Y = get_batch('train')
             assert X.max().item() < model.vocab_size
-            label_smoothing = 0.0 if iter_num < 2000 else 0.1
+            label_smoothing = 0.0 if iter_num < label_smoothing_start else 0.2
             logits, loss = model(X, Y, label_smoothing=label_smoothing)  # Forward pass through the model
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
             loss.backward()  # Backpropagation
+
+            assert not torch.isnan(loss), "Loss is NaN"
             if torch.isnan(loss) or torch.isinf(loss):
                 print("Warning: loss is NaN or Inf")
+
+            if iter_num % 200 == 0 and micro_step == 0:     
+                for name, param in model.named_parameters():
+                    if param.grad is not None:
+                        assert not torch.isnan(param.grad).any(), f"{name} has NaN gradients"
+                print(f"logits std: {logits.std().item():.4f}, mean: {logits.mean().item():.4f}, loss: {loss.item():.4f}") 
+
+            
             
         # if iter_num % 100 == 0:    
         #     for name, p in model.named_parameters():
