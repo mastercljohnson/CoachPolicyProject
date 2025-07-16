@@ -164,11 +164,16 @@ class TransformerDecoder(nn.Module):
         return linear_output, loss
     
     @torch.no_grad()
-    def generate(self, input, max_length=20):
+    def generate(self, input, max_length=20, temperature=1.0, top_k=None):
         for _ in range(max_length):
             cropped_input = input[:, -self.num_input_tokens:]  # Ensure input is within the max length
             logits, _ = self.forward(cropped_input)
-            probs = torch.nn.functional.softmax(logits[:, -1, :], dim=-1)  # Get probabilities for the last token
+            logits = logits[:, -1, :] / temperature
+            if top_k is not None:
+                values, _ = torch.topk(logits, k=top_k)
+                min_values = values[:, -1].unsqueeze(-1)
+                logits = torch.where(logits < min_values, torch.full_like(logits, -float("Inf")), logits)
+            probs = torch.nn.functional.softmax(logits, dim=-1)  # Get probabilities for the last token
             next_token = torch.multinomial(probs, num_samples=1)
             input = torch.cat([input, next_token], dim=1)
         return input
