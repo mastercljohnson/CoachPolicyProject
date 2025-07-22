@@ -4,8 +4,8 @@ import torch.nn as nn
 
 import transformers
 
-from model import TrajectoryModel
-from trajectory_gpt2 import GPT2Model
+from decision_transformer.model import TrajectoryModel
+from decision_transformer.trajectory_gpt2 import GPT2Model
 
 
 class DecisionTransformer(TrajectoryModel):
@@ -19,6 +19,8 @@ class DecisionTransformer(TrajectoryModel):
             state_dim,
             act_dim,
             hidden_size,
+            num_layers=6,
+            num_heads=6,
             max_length=None,
             max_ep_len=4096,
             action_tanh=True,
@@ -30,6 +32,8 @@ class DecisionTransformer(TrajectoryModel):
         config = transformers.GPT2Config(
             vocab_size=1,  # doesn't matter -- we don't use the vocab
             n_embd=hidden_size,
+            n_layer=num_layers,
+            n_head=num_heads,
             **kwargs
         )
 
