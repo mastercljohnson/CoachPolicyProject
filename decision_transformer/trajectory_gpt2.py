@@ -37,7 +37,7 @@ from transformers.modeling_outputs import (
 from transformers.modeling_utils import (
     Conv1D,
     PreTrainedModel,
-    SequenceSummary,
+    # SequenceSummary, # I dont think we need this for this implementation, and this is no longer public API
     find_pruneable_heads_and_indices,
     prune_conv1d_layer,
 )
@@ -584,7 +584,7 @@ class GPT2Model(GPT2PreTrainedModel):
 
     @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
+        processor_class=_TOKENIZER_FOR_DOC,
         checkpoint="gpt2",
         output_type=BaseModelOutputWithPastAndCrossAttentions,
         config_class=_CONFIG_FOR_DOC,
