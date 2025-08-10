@@ -59,6 +59,9 @@ class DecisionTransformer(TrajectoryModel):
 
         batch_size, seq_length = states.shape[0], states.shape[1]
 
+        # print(f"Batch size: {batch_size}, Seq length: {seq_length}, State dim: {self.state_dim}, Action dim: {self.act_dim}")
+        # print(f"Actions shape: {actions.shape if actions is not None else 'None'}")
+
         if attention_mask is None:
             # attention mask for GPT: 1 if can be attended to, 0 if not
             attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)

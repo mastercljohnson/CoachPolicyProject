@@ -4,6 +4,8 @@ from torch import nn
 from torch.nn import functional as F
 from torch.distributions import Categorical
 from decision_transformer.decision_transformer import DecisionTransformer
+from collections import deque
+from itertools import islice
 
 # import torch_directml
 
@@ -20,42 +22,6 @@ def message_to_action_converter(message):
     # Placeholder function to convert a received communication message to an action
     # This could involve parsing the message and determining the action based on its content
     return np.zeros(4)  # Example action, replace with actual logic
-
-# class DecisionTransformer(nn.Module):
-#     def __init__(self, state_dim, action_dim, hidden_size, num_layers, max_ep_len=4096,observation_spaces=None, action_spaces=None, action_tanh=True):
-#         super(DecisionTransformer, self).__init__()
-#         self.state_dim = state_dim
-#         self.action_dim = action_dim
-#         self.hidden_size = hidden_size # timestep embedding size
-#         self.num_layers = num_layers
-#         self.max_ep_len = max_ep_len
-#         self.observation_spaces = observation_spaces  # Placeholder for observation spaces
-#         self.action_spaces = action_spaces        # Placeholder for action spaces
-        
-#         # Define the embeddings for RL here, basically cast all things to embedding size
-#         # self.embed_timestep = nn.Embedding(max_ep_len, self.hidden_size)
-#         # self.embed_return = torch.nn.Linear(1, self.hidden_size) # lol scalar to vector
-#         # self.embed_state = torch.nn.Linear(self.state_dim, hidden_size)
-#         # self.embed_action = torch.nn.Linear(self.action_dim, hidden_size)
-
-#         # self.embed_ln = nn.LayerNorm(hidden_size)
-
-#         # # note: we don't predict states or returns for the paper
-#         # self.predict_state = torch.nn.Linear(hidden_size, self.state_dim)
-#         # # tanh scales between -1 and 1, which is useful for some action spaces?
-#         # self.predict_action = nn.Sequential(
-#         #     *([nn.Linear(hidden_size, self.action_dim)] + ([nn.Tanh()] if action_tanh else []))
-#         # )
-#         # self.predict_return = torch.nn.Linear(hidden_size, 1)
-        
-#         # # Define the transformer layer here, assume context window is max_ep_len* 3* timesteps (R_t,s_t, a_t) is a single timestep 
-#         # self.transformer = TransformerDecoder(num_heads=3, num_input_tokens=3*max_ep_len, encode_dim=hidden_size, key_dim=hidden_size // 3, value_dim=hidden_size // 3,num_blocks=2)
-
-#     # Just copy the implementation from the Decision Transformer paper code
-#     # rewards doesnt seem like its used here
-#     def forward(self, obs, actions, rewards,  returns_to_go, timesteps, attention_mask=None):
-
-#         return {agent_id: action_space.sample() for agent_id, action_space in self.action_spaces.items()}
 
 class Agent:
     def __init__(self, agent_id, observation_space, action_space, agents, disable_comms=False):
@@ -113,10 +79,13 @@ class Agent:
         dist = Categorical(probs=trust_to_probability)
         sampled_index = dist.sample().item()  # Sample an index based on the trust vector. item() converts the tensor to a Python int
         
-        if sampled_index == self.num_agents:
+        if sampled_index == self.num_agents and coach_suggestion is not None:
             # If the sampled index corresponds to the coach(index == #agents), return the coach's suggestion
             return coach_suggestion
         else:
+            while sampled_index == self.num_agents:
+                sampled_index = dist.sample().item()
+                
             selected_agent_action_overide = self.index_to_agent_id_map[sampled_index]
             if selected_agent_action_overide == self.agent_id:
                 # If the selected agent is this agent, return its own action
@@ -125,30 +94,64 @@ class Agent:
                 return comms_to_actions[selected_agent_action_overide]
 
 class DTCG(nn.Module):
-    def __init__(self, agents, observation_spaces=None, action_spaces=None, ignore_single_agents=False, ignore_interagent_comms=False):
+    def __init__(self, agents, observation_spaces=None, action_spaces=None, ignore_single_agents=False, ignore_interagent_comms=False, replay_buffer_size=1000):
         super().__init__()
         # Initialize agents
         self.observation_spaces = observation_spaces
         self.action_spaces = action_spaces
         self.agents = {agent_id: Agent(agent_id, self.observation_spaces[agent_id], self.action_spaces[agent_id], agents) for agent_id in agents}
+        self.sample_obs_space = self.observation_spaces[agents[0]]
+        self.sample_action_space = self.action_spaces[agents[0]]
         self.ignore_single_agents = ignore_single_agents
         self.ignore_interagent_comms = ignore_interagent_comms
+
+        #  What is a good size for buffers?
+        self.state_buffer = deque(maxlen=replay_buffer_size)
+        self.action_buffer = deque(maxlen=replay_buffer_size)
+        self.reward_buffer = deque(maxlen=replay_buffer_size)
+        # print("State Buffer Shape:", len(self.state_buffer), "Maxlen:", self.state_buffer.maxlen)
         
 
 
         # Initialize Decision Transformer here
         self.decision_transformer = DecisionTransformer(
-            state_dim=128,  # Example state dimension
-            act_dim=4,   # Example action dimension
+            state_dim=len(agents) * self.sample_obs_space.shape[0],  # State dimension is num_agents * state_dim, shape[0] is num of dims for featurespace
+            act_dim=len(agents) * self.sample_action_space.shape[0],   # Example action dimension
             hidden_size=256, # Example hidden dimension
+            num_heads= 4,  # Example number of heads , code later asserts hidden_size % num_heads == 0
             # num_layers=6,    # Example number of layers
             max_ep_len=4096,  # Example maximum episode length
             observation_spaces=self.observation_spaces,
             action_spaces=self.action_spaces
         )
 
-    def act(self, total_obs):
-        suggested_actions = self.decision_transformer.forward(total_obs, None, None, None, None)  # Placeholder for actions from Decision Transformer
+    def act(self, total_obs, total_rewards, env_step=0):
+        # print("Total Obs Shape:", {agent: obs.shape for agent, obs in total_obs.items()})
+        # print("Total Obs:", total_obs)
+
+        dt_combined_obs = np.concatenate([total_obs[agent_id] for agent_id in sorted(total_obs.keys())], axis=-1)
+        self.state_buffer.append(dt_combined_obs)
+        # print("State Buffer Length:", len(self.state_buffer))
+        # print("State Buffer:", self.state_buffer)
+
+        suggested_actions = None # Set to None initially
+
+        # Get actions from replay buffer episode
+        sample_num = 30
+        if len(self.state_buffer) >= sample_num:
+            start_index = np.random.randint(0, len(self.state_buffer) - sample_num)
+            end_index = start_index + sample_num
+
+            states = torch.from_numpy(self.state_buffer[start_index:end_index]).float()
+            actions = torch.from_numpy(self.action_buffer[start_index:end_index]).float()
+            rewards = torch.from_numpy(self.reward_buffer[start_index:end_index]).float()
+            # Need to implement returns_to_go and timesteps if needed
+            returns_to_go = None  # Placeholder, implement if needed
+            timesteps = None  # Placeholder, implement if needed
+
+            suggested_actions = self.decision_transformer.forward(states, actions, rewards, None, None)  # Placeholder for actions from Decision Transformer
+        
+        
         total_actions = {}
         
         # communication between agents
@@ -158,7 +161,7 @@ class DTCG(nn.Module):
                 comm_data[agent_id] = self.agents[agent_id].communicate(
                     obs=total_obs[agent_id],
                     other_agents=list(self.agents.keys()),
-                    coach_suggestion=suggested_actions[agent_id]
+                    coach_suggestion=suggested_actions[agent_id] if suggested_actions else None
                 )
 
             # Order communication data by recipient
@@ -168,7 +171,7 @@ class DTCG(nn.Module):
                 action = agent.act(
                     obs=total_obs[agent_id],
                     comms=ordered_comms[agent_id],  # Placeholder for communication data
-                    coach_suggestion=suggested_actions[agent_id],
+                    coach_suggestion=suggested_actions[agent_id] if suggested_actions else None,
                     decision_transformer_overide=self.ignore_single_agents
                 )
                 total_actions[agent_id] = action
@@ -177,9 +180,14 @@ class DTCG(nn.Module):
                 action = agent.act(
                     obs=total_obs[agent_id],
                     comms=None,  # Placeholder for communication data
-                    coach_suggestion=suggested_actions[agent_id],
+                    coach_suggestion=suggested_actions[agent_id] if suggested_actions else None,
                     decision_transformer_overide=self.ignore_single_agents
                 )
                 total_actions[agent_id] = action
+        
+        print("Total Actions:", total_actions)
+        # Store actions in the replay buffer
+        self.action_buffer.append(np.concatenate([total_actions[agent_id] for agent_id in sorted(total_actions.keys())], axis=-1))
+
         return total_actions
         
