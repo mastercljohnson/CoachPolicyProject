@@ -85,7 +85,7 @@ class Agent:
         else:
             while sampled_index == self.num_agents:
                 sampled_index = dist.sample().item()
-                
+
             selected_agent_action_overide = self.index_to_agent_id_map[sampled_index]
             if selected_agent_action_overide == self.agent_id:
                 # If the selected agent is this agent, return its own action
@@ -139,12 +139,12 @@ class DTCG(nn.Module):
         # Get actions from replay buffer episode
         sample_num = 30
         if len(self.state_buffer) >= sample_num:
-            start_index = np.random.randint(0, len(self.state_buffer) - sample_num)
-            end_index = start_index + sample_num
+            start_index = np.random.randint(0, len(self.state_buffer) - sample_num + 1)
+            end_index = start_index + sample_num - 1
 
-            states = torch.from_numpy(self.state_buffer[start_index:end_index]).float()
-            actions = torch.from_numpy(self.action_buffer[start_index:end_index]).float()
-            rewards = torch.from_numpy(self.reward_buffer[start_index:end_index]).float()
+            states = torch.from_numpy(np.array(list(islice(self.state_buffer, start_index, end_index)))).float()
+            actions = torch.from_numpy(np.array(list(islice(self.action_buffer, start_index, end_index)))).float()
+            rewards = torch.from_numpy(np.array(list(islice(self.reward_buffer, start_index, end_index)))).float()
             # Need to implement returns_to_go and timesteps if needed
             returns_to_go = None  # Placeholder, implement if needed
             timesteps = None  # Placeholder, implement if needed
