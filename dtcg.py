@@ -108,7 +108,8 @@ class DTCG(nn.Module):
         #  What is a good size for buffers?
         self.state_buffer = deque(maxlen=replay_buffer_size)
         self.action_buffer = deque(maxlen=replay_buffer_size)
-        self.reward_buffer = deque(maxlen=replay_buffer_size)
+        self.cumulative_reward_so_far = deque(maxlen=replay_buffer_size)
+        self.returns_to_go_buffer = deque(maxlen=replay_buffer_size)
         # print("State Buffer Shape:", len(self.state_buffer), "Maxlen:", self.state_buffer.maxlen)
         
 
@@ -124,13 +125,36 @@ class DTCG(nn.Module):
             observation_spaces=self.observation_spaces,
             action_spaces=self.action_spaces
         )
+    
+    def load_state_buffer(self, states):
+        dt_combined_obs = np.concatenate([states[agent_id] for agent_id in sorted(states.keys())], axis=-1)
+        self.state_buffer.append(dt_combined_obs)
+    
+    # TODO: check if the indexes for calculating returns align for returns_to_go_buffer
+    def load_returns_to_go(self, cumulative_return, env_steps):
+        for timestep in range(env_steps-1, -1, -1):
+            # print(timestep)
+            self.returns_to_go_buffer.append(cumulative_return - self.cumulative_reward_so_far[-1 - timestep]) 
+        
+        # print("Returns to go buffer length:", len(self.returns_to_go_buffer))
+        # print("State buffer length:", len(self.state_buffer))
+        # print("Action buffer length:", len(self.action_buffer))
+        
+        # print("Returns to go buffer:", self.returns_to_go_buffer)
+        # print("State buffer:", self.state_buffer)
+        # print("Action buffer:", self.action_buffer)
 
-    def act(self, total_obs, total_rewards, env_step=0):
+    def act(self, total_obs, cumulative_rewards, env_step=0):
         # print("Total Obs Shape:", {agent: obs.shape for agent, obs in total_obs.items()})
         # print("Total Obs:", total_obs)
 
-        dt_combined_obs = np.concatenate([total_obs[agent_id] for agent_id in sorted(total_obs.keys())], axis=-1)
-        self.state_buffer.append(dt_combined_obs)
+        self.cumulative_reward_so_far.append(cumulative_rewards)
+
+        self.load_state_buffer(total_obs)
+        # dt_combined_obs = np.concatenate([total_obs[agent_id] for agent_id in sorted(total_obs.keys())], axis=-1)
+        # self.state_buffer.append(dt_combined_obs)
+
+
         # print("State Buffer Length:", len(self.state_buffer))
         # print("State Buffer:", self.state_buffer)
 
@@ -138,18 +162,17 @@ class DTCG(nn.Module):
 
         # Get actions from replay buffer episode
         sample_num = 30
-        if len(self.state_buffer) >= sample_num:
-            start_index = np.random.randint(0, len(self.state_buffer) - sample_num + 1)
+        if len(self.returns_to_go_buffer) >= sample_num:
+            start_index = np.random.randint(0, len(self.returns_to_go_buffer) - sample_num + 1)
             end_index = start_index + sample_num - 1
 
             states = torch.from_numpy(np.array(list(islice(self.state_buffer, start_index, end_index)))).float()
             actions = torch.from_numpy(np.array(list(islice(self.action_buffer, start_index, end_index)))).float()
-            rewards = torch.from_numpy(np.array(list(islice(self.reward_buffer, start_index, end_index)))).float()
+            returns_to_go = torch.from_numpy(np.array(list(islice(self.returns_to_go_buffer, start_index, end_index)))).float()
             # Need to implement returns_to_go and timesteps if needed
-            returns_to_go = None  # Placeholder, implement if needed
             timesteps = None  # Placeholder, implement if needed
 
-            suggested_actions = self.decision_transformer.forward(states, actions, rewards, None, None)  # Placeholder for actions from Decision Transformer
+            suggested_actions = self.decision_transformer.forward(states, actions, None, returns_to_go, None)  # Placeholder for actions from Decision Transformer
         
         
         total_actions = {}
@@ -185,7 +208,7 @@ class DTCG(nn.Module):
                 )
                 total_actions[agent_id] = action
         
-        print("Total Actions:", total_actions)
+        # print("Total Actions:", total_actions)
         # Store actions in the replay buffer
         self.action_buffer.append(np.concatenate([total_actions[agent_id] for agent_id in sorted(total_actions.keys())], axis=-1))
 
