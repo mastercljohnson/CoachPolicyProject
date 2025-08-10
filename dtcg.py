@@ -168,7 +168,8 @@ class DTCG(nn.Module):
 
             states = torch.from_numpy(np.array(list(islice(self.state_buffer, start_index, end_index)))).float()
             actions = torch.from_numpy(np.array(list(islice(self.action_buffer, start_index, end_index)))).float()
-            returns_to_go = torch.from_numpy(np.array(list(islice(self.returns_to_go_buffer, start_index, end_index)))).float()
+            returns_to_go = torch.from_numpy(np.array(list(islice(self.returns_to_go_buffer, start_index, end_index)))).float() # need to reshape this to be (N, 1)
+            returns_to_go = returns_to_go.unsqueeze(-1)
             # Need to implement returns_to_go and timesteps if needed
             timesteps = None  # Placeholder, implement if needed
 
