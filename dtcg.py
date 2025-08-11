@@ -180,7 +180,16 @@ class DTCG(nn.Module):
             returns_to_go = returns_to_go.unsqueeze(0)  # Add batch dimension
             timesteps = timesteps.unsqueeze(0)
 
-            suggested_actions = self.decision_transformer.forward(states, actions, None, returns_to_go, timesteps)  # TODO: Do we need attention mask?
+            state_preds, action_preds, return_preds = self.decision_transformer.forward(states, actions, None, returns_to_go, timesteps)  # TODO: Do we need attention mask? We could potentially just use get action?
+
+            # Since we dont care about batching yet, we can remove batch dim and take the last action prediction
+            suggested_actions = action_preds.squeeze(0)[-1]  # Remove batch dimension
+
+            # print("Suggested Actions shape:", suggested_actions.shape)
+
+            # Cast suggested actions to each agent
+            suggested_actions = {agent_id: suggested_actions[i * self.sample_action_space.shape[0]:(i + 1) * self.sample_action_space.shape[0]] for i, agent_id in enumerate(sorted(total_obs.keys()))}
+            print("Suggested Actions:", suggested_actions)
         
         
         total_actions = {}
