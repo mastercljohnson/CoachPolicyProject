@@ -110,6 +110,7 @@ class DTCG(nn.Module):
         self.action_buffer = deque(maxlen=replay_buffer_size)
         self.cumulative_reward_so_far = deque(maxlen=replay_buffer_size)
         self.returns_to_go_buffer = deque(maxlen=replay_buffer_size)
+        self.timestep_buffer = deque(maxlen=replay_buffer_size)
         # print("State Buffer Shape:", len(self.state_buffer), "Maxlen:", self.state_buffer.maxlen)
         
 
@@ -151,6 +152,7 @@ class DTCG(nn.Module):
         self.cumulative_reward_so_far.append(cumulative_rewards)
 
         self.load_state_buffer(total_obs)
+        self.timestep_buffer.append(env_step)
         # dt_combined_obs = np.concatenate([total_obs[agent_id] for agent_id in sorted(total_obs.keys())], axis=-1)
         # self.state_buffer.append(dt_combined_obs)
 
@@ -170,10 +172,9 @@ class DTCG(nn.Module):
             actions = torch.from_numpy(np.array(list(islice(self.action_buffer, start_index, end_index)))).float()
             returns_to_go = torch.from_numpy(np.array(list(islice(self.returns_to_go_buffer, start_index, end_index)))).float() # need to reshape this to be (N, 1)
             returns_to_go = returns_to_go.unsqueeze(-1)
-            # Need to implement returns_to_go and timesteps if needed
-            timesteps = None  # Placeholder, implement if needed
+            timesteps = torch.from_numpy(np.array(list(islice(self.timestep_buffer, start_index, end_index)))).long() # long for embedding layer
 
-            suggested_actions = self.decision_transformer.forward(states, actions, None, returns_to_go, None)  # Placeholder for actions from Decision Transformer
+            suggested_actions = self.decision_transformer.forward(states, actions, None, returns_to_go, timesteps)  # TODO: Do we need attention mask?
         
         
         total_actions = {}
