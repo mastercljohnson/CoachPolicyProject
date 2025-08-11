@@ -77,6 +77,8 @@ class DecisionTransformer(TrajectoryModel):
         action_embeddings = action_embeddings + time_embeddings
         returns_embeddings = returns_embeddings + time_embeddings
 
+        # print(f"State embeddings shape: {state_embeddings.shape}, Action embeddings shape: {action_embeddings.shape}, Returns embeddings shape: {returns_embeddings.shape}")
+
         # this makes the sequence look like (R_1, s_1, a_1, R_2, s_2, a_2, ...)
         # which works nice in an autoregressive sense since states predict actions
         stacked_inputs = torch.stack(

@@ -174,6 +174,12 @@ class DTCG(nn.Module):
             returns_to_go = returns_to_go.unsqueeze(-1)
             timesteps = torch.from_numpy(np.array(list(islice(self.timestep_buffer, start_index, end_index)))).long() # long for embedding layer
 
+            # For now add batch dimensions manually
+            states = states.unsqueeze(0)  # Add batch dimension
+            actions = actions.unsqueeze(0)  # Add batch dimension
+            returns_to_go = returns_to_go.unsqueeze(0)  # Add batch dimension
+            timesteps = timesteps.unsqueeze(0)
+
             suggested_actions = self.decision_transformer.forward(states, actions, None, returns_to_go, timesteps)  # TODO: Do we need attention mask?
         
         
