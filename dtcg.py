@@ -169,7 +169,8 @@ class DTCG(nn.Module):
             end_index = start_index + sample_num - 1
 
             states = torch.from_numpy(np.array(list(islice(self.state_buffer, start_index, end_index)))).float()
-            actions = torch.from_numpy(np.array(list(islice(self.action_buffer, start_index, end_index)))).float()
+            actions = torch.stack(list(islice(self.action_buffer, start_index, end_index))) # did some processing later to make sure these are tensors, should clean this up later
+            print("Actions shape:", actions.shape)
             returns_to_go = torch.from_numpy(np.array(list(islice(self.returns_to_go_buffer, start_index, end_index)))).float() # need to reshape this to be (N, 1)
             returns_to_go = returns_to_go.unsqueeze(-1)
             timesteps = torch.from_numpy(np.array(list(islice(self.timestep_buffer, start_index, end_index)))).long() # long for embedding layer
@@ -177,6 +178,7 @@ class DTCG(nn.Module):
             # For now add batch dimensions manually
             states = states.unsqueeze(0)  # Add batch dimension
             actions = actions.unsqueeze(0)  # Add batch dimension
+            print("Actions shape after adding batch dim:", actions.shape)
             returns_to_go = returns_to_go.unsqueeze(0)  # Add batch dimension
             timesteps = timesteps.unsqueeze(0)
 
@@ -227,7 +229,9 @@ class DTCG(nn.Module):
         
         # print("Total Actions:", total_actions)
         # Store actions in the replay buffer
-        self.action_buffer.append(np.concatenate([total_actions[agent_id] for agent_id in sorted(total_actions.keys())], axis=-1))
+        #  I think i shouldnt do this in one line
+        self.action_buffer.append(torch.cat([torch.from_numpy(total_actions[agent_id]).float() if isinstance(total_actions[agent_id], np.ndarray) else total_actions[agent_id] for agent_id in sorted(total_actions.keys())], axis=-1))
+        # self.action_buffer.append(np.concatenate([total_actions[agent_id] for agent_id in sorted(total_actions.keys())], axis=-1))
 
         return total_actions
         
