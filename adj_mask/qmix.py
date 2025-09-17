@@ -8,10 +8,10 @@ class QMix(nn.Module):
             setattr(self, f"agent_{i}_policy_network", nn.Linear(state_space, action_space))
             setattr(self, f"agent_{i}_q_network", nn.Linear(state_space + action_space, 1))
         self.hyper_network_1 = nn.Linear(state_space, hidden_dim*num_agents) # W1 weights
-        self.hyper_network_2 = nn.Linear(state_space, hidden_dim*num_agents) # Layernorm+ residual
+        self.hyper_network_2 = nn.Linear(state_space, hidden_dim*num_agents) # bias?
         self.hyper_network_3 = nn.Linear(state_space, 1) # W2 weights
-        self.hyper_network_4 = nn.Linear(state_space, 1) # layernorm + residual 1
-        self.hyper_network_5 = nn.Linear(state_space, 1) # layernorm + residual 2
+        self.hyper_network_4 = nn.Linear(state_space, 1) # bias2?
+        self.hyper_network_5 = nn.Linear(state_space, 1) # bias2?
     
     def forward(self, states):
         actions = []
@@ -26,6 +26,14 @@ class QMix(nn.Module):
             q_values.append(agent_q_value)
         actions = torch.stack(actions, dim=1)
         q_values = torch.stack(q_values, dim=-1)
+
+        hyper_w1 = torch.abs(self.hyper_network_1(states).view(-1, self.num_agents, -1))  # (batch_size, num_agents, hidden_dim)
+        hyper_b1 = self.hyper_network_2(states).view(-1, 1, -1)  # (batch_size, 1, hidden_dim)
+        hidden = torch.relu(torch.bmm(q_values.unsqueeze(1), hyper_w1) + hyper_b1)
+        hyper_w2 = torch.abs(self.hyper_network_3(states).view(-1, hidden.size(-1), 1))  # (batch_size, hidden_dim, 1)
+        hyper_b2 = self.hyper_network_4(states).view(-1, 1, 1)  # (batch_size, 1, 1)
+        q_total = torch.bmm(hidden, hyper_w2) + hyper_b2  # (batch_size, 1, 1)
+        q_total = q_total.squeeze(-1).squeeze(-1)  # (batch_size,)
 
 
         return actions
