@@ -1,17 +1,19 @@
 import torch
 from torch import nn
 class QMix(nn.Module):
-    def __init__(self, num_agents, state_space, action_space, hidden_dim, **kwargs):
+    def __init__(self, agents, state_space, action_space, hidden_dim, **kwargs):
         super().__init__()
-        self.num_agents = num_agents
-        for i in range(num_agents):
-            setattr(self, f"agent_{i}_policy_network", nn.Linear(state_space, action_space))
-            setattr(self, f"agent_{i}_q_network", nn.Linear(state_space + action_space, 1))
-        self.hyper_network_1 = nn.Linear(state_space, hidden_dim*num_agents) # W1 weights
-        self.hyper_network_2 = nn.Linear(state_space, hidden_dim*num_agents) # bias?
-        self.hyper_network_3 = nn.Linear(state_space, 1) # W2 weights
-        self.hyper_network_4 = nn.Linear(state_space, 1) # bias2?
-        self.hyper_network_5 = nn.Linear(state_space, 1) # bias2?
+        self.num_agents = len(agents)
+        self.state_space = sum([state_space[agent].shape[0] for agent in agents])
+        for i, agent in enumerate(agents):
+            # print(state_space[agent].shape[0], action_space[agent].shape[0])
+            setattr(self, f"agent_{i}_policy_network", nn.Linear(state_space[agent].shape[0], action_space[agent].shape[0]))
+            setattr(self, f"agent_{i}_q_network", nn.Linear(state_space[agent].shape[0] + action_space[agent].shape[0], 1))
+        self.hyper_network_weight_1 = nn.Linear(self.state_space, hidden_dim*self.num_agents) # W1 weights
+        self.hyper_network_bias_1 = nn.Linear(self.state_space, self.num_agents) # bias
+        self.hyper_network_weight_2 = nn.Linear(self.state_space, hidden_dim*self.num_agents) # W2 weights
+        self.hyper_network_bias_2_1 = nn.Linear(self.state_space, hidden_dim) # bias2
+        self.hyper_network_bias_2_2 = nn.Linear(hidden_dim, self.num_agents) # bias2
     
     def forward(self, states):
         actions = []
