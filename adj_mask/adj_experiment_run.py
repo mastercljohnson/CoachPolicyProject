@@ -9,7 +9,8 @@ env = multiwalker_v9.parallel_env(render_mode="human")
 observations, infos = env.reset()
 
 
-algo = AdjFrame(env.agents,32,32, env.observation_spaces, env.action_spaces)
+# hidden dim right now needs to match observation dimensions
+algo = AdjFrame(env.agents,31,31, env.observation_spaces, env.action_spaces)
 
 rewards = None
 
@@ -25,6 +26,8 @@ while env.agents and env_step < total_steps:
     total_rewards = sum(rewards.values()) if rewards else 0 # place holder for total rewards 
     cumulative_rewards += total_rewards
 
+    algo.forward(observations)  # Forward pass
+    
     # actions = algo.act(observations, cumulative_rewards, env_step)  # Get actions from the DTCG algorithm
     # actions = {agent: env.action_space(agent).sample() for agent in env.agents} # this is a dictionary
     # observations, rewards, terminations, truncations, infos = env.step(actions)

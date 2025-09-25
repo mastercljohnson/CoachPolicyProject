@@ -10,6 +10,7 @@ class AdjFrame(nn.Module):
         self.qmix = QMix(agents, state_space, action_space, q_hidden_dim, **kwargs)
     
     def forward(self, x):
+        x = torch.stack([torch.tensor(state) for state in x.values()], dim=0).unsqueeze(0) # (1,3,31)
         x  = self.adj_mask_layer(x)
         x = self.qmix(x)
         return self.adj_mask_layer(x)
