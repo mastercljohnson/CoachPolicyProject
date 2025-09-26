@@ -13,4 +13,4 @@ class AdjFrame(nn.Module):
         x = torch.stack([torch.tensor(state) for state in x.values()], dim=0).unsqueeze(0) # (1,3,31)
         x  = self.adj_mask_layer(x)
         x = self.qmix(x)
-        return self.adj_mask_layer(x)
+        return x
