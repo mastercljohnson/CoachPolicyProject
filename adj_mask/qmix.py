@@ -52,7 +52,7 @@ class QMix(nn.Module):
 
 
 
-        return actions
+        return actions, q_total
     
 if __name__ == "__main__":
     num_agents = 3
