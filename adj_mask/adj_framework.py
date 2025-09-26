@@ -12,5 +12,13 @@ class AdjFrame(nn.Module):
     def forward(self, x):
         x = torch.stack([torch.tensor(state) for state in x.values()], dim=0).unsqueeze(0) # (1,3,31)
         x  = self.adj_mask_layer(x)
-        x = self.qmix(x)
-        return x
+        actions, q_total = self.qmix(x)
+        return self.process_actions(actions), q_total
+    
+    def process_actions(self, actions):
+        # Convert tensor actions to dictionary format, assume batch size of 1
+        action_dict = {f"walker_{i}": actions[0, i].detach().numpy() for i in range(actions.shape[1])}
+        return action_dict
+    
+    def loss(self, q_total, target_q_total):
+        return nn.MSELoss()(q_total, target_q_total)

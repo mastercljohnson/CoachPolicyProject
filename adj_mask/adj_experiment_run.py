@@ -1,5 +1,6 @@
 from pettingzoo.sisl import multiwalker_v9
 from adj_framework import AdjFrame
+import torch
 
 # observation is a dictionary with keys as agent names and values as their respective observations
 # action is a dictionary with keys as agent names and values as their respective actions
@@ -26,13 +27,16 @@ while env.agents and env_step < total_steps:
     total_rewards = sum(rewards.values()) if rewards else 0 # place holder for total rewards 
     cumulative_rewards += total_rewards
 
-    actions = algo.forward(observations)  # Forward pass
+    actions, q_total = algo.forward(observations)  # Forward pass
     print("Actions from the model:", actions)
     
     # actions = algo.act(observations, cumulative_rewards, env_step)  # Get actions from the DTCG algorithm
     # actions = {agent: env.action_space(agent).sample() for agent in env.agents} # this is a dictionary
     observations, rewards, terminations, truncations, infos = env.step(actions)
     env_step += 1
+
+    loss = algo.loss(q_total, torch.tensor([cumulative_rewards], dtype=torch.float32))
+
     termination_signal = any(terminations.values()) or any(truncations.values())
 
     # Uhhhh, here what happens for the online case?

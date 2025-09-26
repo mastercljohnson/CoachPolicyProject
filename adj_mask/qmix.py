@@ -31,7 +31,7 @@ class QMix(nn.Module):
             # print("agent_q_value", agent_q_value.shape)
             q_values.append(agent_q_value)
         actions = torch.stack(actions, dim=1)
-        # print(q_values)
+        print("actions", actions.shape)
         q_values = torch.cat(q_values, dim=-1)
         # print("q_values", q_values.shape)
 
