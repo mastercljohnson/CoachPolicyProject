@@ -2,15 +2,15 @@ import torch
 from torch import nn
 
 class AdjMask(nn.Module):
-    def __init__(self, hidden_dim, adj_mask=None, **kwargs):
+    def __init__(self, n_head, hidden_dim, adj_mask=None, **kwargs):
         super().__init__()
         self.c_attn = nn.Linear(hidden_dim, 3 * hidden_dim, bias=False)
         self.adj_mask = adj_mask
         # output projection
         self.c_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.hidden_dim = hidden_dim
-        self.n_head = 1
-        self.dropout = 0 #0.1
+        self.n_head = n_head
+        self.dropout = 0.1
         self.resid_dropout = nn.Dropout(self.dropout)
     
     def forward(self, x):

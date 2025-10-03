@@ -8,11 +8,11 @@ import numpy as np
 # Not sure what infos is
 
 env = multiwalker_v9.parallel_env(render_mode="human",terminate_on_fall=True)
-observations, infos = env.reset(seed=0)
+observations, infos = env.reset()
 
 
 # hidden dim right now needs to match observation dimensions
-algo = AdjFrame(env.agents,31,31, env.observation_spaces, env.action_spaces)
+algo = AdjFrame(2, env.agents,31,31, env.observation_spaces, env.action_spaces)
 
 rewards = None
 
@@ -42,7 +42,7 @@ while env_step < total_steps:
         #  Load the terminal state, I dont think we need to do this
 
         # Reset the environment
-        observations, infos = env.reset(seed=0)
+        observations, infos = env.reset()
         termination_signal = False
         cumulative_rewards = 0
         rewards = None
