@@ -10,7 +10,7 @@ class AdjMask(nn.Module):
         self.c_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.hidden_dim = hidden_dim
         self.n_head = 1
-        self.dropout = 0.1
+        self.dropout = 0 #0.1
         self.resid_dropout = nn.Dropout(self.dropout)
     
     def forward(self, x):

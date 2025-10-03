@@ -6,7 +6,7 @@ import torch
 # action is a dictionary with keys as agent names and values as their respective actions
 # Not sure what infos is
 
-env = multiwalker_v9.parallel_env(render_mode="human")
+env = multiwalker_v9.parallel_env(render_mode="human",terminate_on_fall=True)
 observations, infos = env.reset()
 
 
@@ -15,7 +15,7 @@ algo = AdjFrame(env.agents,31,31, env.observation_spaces, env.action_spaces)
 
 rewards = None
 
-total_steps = 100000
+total_steps = 1000
 
 backprop_steps = 10
 
@@ -30,10 +30,18 @@ weight_decay = 1e-2 # L2 regularization term
 
 optimizer = torch.optim.AdamW(algo.parameters(), lr=lr, betas=(beta1, beta2), weight_decay=weight_decay)
 
-while env.agents and env_step < total_steps:
-    # this is where you would insert your policy
-    total_rewards = sum(rewards.values()) if rewards else 0 # place holder for total rewards 
-    cumulative_rewards += total_rewards
+while env_step < total_steps:
+
+    if termination_signal:
+        #  Load the terminal state, I dont think we need to do this
+
+        # Reset the environment
+        observations, infos = env.reset()
+        termination_signal = False
+        cumulative_rewards = 0
+        rewards = None
+        # env_step = 0
+        
 
     actions, q_total = algo.forward(observations)  # Forward pass
     # print("Actions from the model:", actions)
@@ -42,6 +50,9 @@ while env.agents and env_step < total_steps:
     # actions = {agent: env.action_space(agent).sample() for agent in env.agents} # this is a dictionary
     observations, rewards, terminations, truncations, infos = env.step(actions)
     env_step += 1
+
+    total_rewards = sum(rewards.values()) if rewards else 0 # place holder for total rewards 
+    cumulative_rewards += total_rewards
 
     
     loss = algo.loss(q_total, torch.tensor([cumulative_rewards], dtype=torch.float32))
@@ -53,20 +64,6 @@ while env.agents and env_step < total_steps:
 
     termination_signal = any(terminations.values()) or any(truncations.values())
 
-    # Uhhhh, here what happens for the online case?
-    #  I need something that generates good trajectories
-    # if env_step % backprop_steps == 0:
-    #     # Backpropagate the rewards through the algorithm
-    #     continue
-
-    if termination_signal:
-        print("Terminates or truncates detected.")
-        #  Load the terminal state, I dont think we need to do this
-
-        # Reset the environment
-        observations, infos = env.reset()
-        termination_signal = False
-        cumulative_rewards = 0
-        # env_step = 0
+    
 
 env.close()
