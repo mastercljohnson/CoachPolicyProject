@@ -6,16 +6,25 @@ class QMix(nn.Module):
         self.num_agents = len(agents)
         self.state_space = sum([state_space[agent].shape[0] for agent in agents])
         self.hidden_dim = hidden_dim
+        # for i, agent in enumerate(agents):
+        #     setattr(self, f"agent_{i}_policy_network", nn.Linear(state_space[agent].shape[0], action_space[agent].shape[0]))
+        #     setattr(self, f"agent_{i}_q_network", nn.Linear(state_space[agent].shape[0] + action_space[agent].shape[0], 1))
         for i, agent in enumerate(agents):
-            setattr(self, f"agent_{i}_policy_network", nn.Linear(state_space[agent].shape[0], action_space[agent].shape[0]))
-            setattr(self, f"agent_{i}_q_network", nn.Linear(state_space[agent].shape[0] + action_space[agent].shape[0], 1))
-        self.hyper_network_weight_1 = nn.Linear(self.state_space, hidden_dim*self.num_agents) # W1 weights
-        self.hyper_network_bias_1 = nn.Linear(self.state_space, hidden_dim) # bias
-        self.hyper_network_weight_2 = nn.Linear(self.state_space, hidden_dim) # W2 weights
-        self.hyper_network_bias_2_1 = nn.Linear(self.state_space, hidden_dim) # bias2
+            setattr(self, f"agent_{i}_policy_network", nn.Linear(self.hidden_dim, action_space[agent].shape[0]))
+            setattr(self, f"agent_{i}_q_network", nn.Linear(self.hidden_dim + action_space[agent].shape[0], 1))
+        # self.hyper_network_weight_1 = nn.Linear(self.state_space, hidden_dim*self.num_agents) # W1 weights
+        # self.hyper_network_bias_1 = nn.Linear(self.state_space, hidden_dim) # bias
+        # self.hyper_network_weight_2 = nn.Linear(self.state_space, hidden_dim) # W2 weights
+        # self.hyper_network_bias_2_1 = nn.Linear(self.state_space, hidden_dim) # bias2
+        self.hyper_network_weight_1 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim*self.num_agents) # W1 weights
+        self.hyper_network_bias_1 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim) # bias
+        self.hyper_network_weight_2 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim) # W2 weights
+        self.hyper_network_bias_2_1 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim) # bias2
+
         self.hyper_network_bias_2_2 = nn.Linear(hidden_dim, 1) # bias2
     
     def forward(self, states):
+        print(f"State shape {states.shape}")
         actions = []
         q_values = []
         for i in range(self.num_agents):

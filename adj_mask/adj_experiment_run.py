@@ -12,7 +12,7 @@ observations, infos = env.reset()
 
 
 # hidden dim right now needs to match observation dimensions
-algo = AdjFrame(2, env.agents,31,31, env.observation_spaces, env.action_spaces)
+algo = AdjFrame(3, env.agents,60,60, env.observation_spaces, env.action_spaces)
 
 rewards = None
 
@@ -31,8 +31,8 @@ weight_decay = 1e-2 # L2 regularization term
 
 optimizer = torch.optim.AdamW(algo.parameters(), lr=lr, betas=(beta1, beta2), weight_decay=weight_decay)
 
-for name, param in algo.named_parameters():
-    print(f"Algo Parameter to optimize {name} with shape {param.shape}")
+# for name, param in algo.named_parameters():
+#     print(f"Algo Parameter to optimize {name} with shape {param.shape}")
 
 local_step = 0
 
