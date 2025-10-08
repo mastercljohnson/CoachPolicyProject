@@ -18,7 +18,7 @@ class AdjMask(nn.Module):
     def forward(self, x):
         x = self.encode(x)
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
-        print(B,T,C)
+        # print(B,T,C)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         q, k, v  = self.c_attn(x).split(self.hidden_dim, dim=2)
@@ -28,7 +28,7 @@ class AdjMask(nn.Module):
         y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=self.adj_mask, dropout_p=self.dropout if self.training else 0, is_causal=True)
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
 
-        print("Before output projection")
+        # print("Before output projection")
 
         # output projection
         y = self.resid_dropout(self.c_proj(y))

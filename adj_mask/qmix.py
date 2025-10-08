@@ -24,7 +24,7 @@ class QMix(nn.Module):
         self.hyper_network_bias_2_2 = nn.Linear(hidden_dim, 1) # bias2
     
     def forward(self, states):
-        print(f"State shape {states.shape}")
+        # print(f"State shape {states.shape}")
         actions = []
         q_values = []
         for i in range(self.num_agents):
