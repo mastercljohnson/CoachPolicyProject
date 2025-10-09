@@ -20,5 +20,8 @@ class AdjFrame(nn.Module):
         action_dict = {f"walker_{i}": actions[0, i].detach().numpy() for i in range(actions.shape[1])}
         return action_dict
     
-    def loss(self, q_total, target_q_total):
+    def critic_loss(self, q_total, target_q_total):
         return nn.MSELoss()(q_total, target_q_total)
+    
+    def actor_loss(self, q_total, log_probs):
+        pass
