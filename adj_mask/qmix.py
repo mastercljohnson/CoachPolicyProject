@@ -1,11 +1,17 @@
 import torch
 from torch import nn
+from torch.distributions import MultivariateNormal
+
+
 class QMix(nn.Module):
     def __init__(self, agents, state_space, action_space, hidden_dim, **kwargs):
         super().__init__()
         self.num_agents = len(agents)
         self.state_space = sum([state_space[agent].shape[0] for agent in agents])
         self.hidden_dim = hidden_dim
+        # Initialize the covariance matrix used to query the actor for actions
+		# self.cov_var = torch.full(size=(self.act_dim,), fill_value=0.5)
+		# self.cov_mat = torch.diag(self.cov_var)
         # for i, agent in enumerate(agents):
         #     setattr(self, f"agent_{i}_policy_network", nn.Linear(state_space[agent].shape[0], action_space[agent].shape[0]))
         #     setattr(self, f"agent_{i}_q_network", nn.Linear(state_space[agent].shape[0] + action_space[agent].shape[0], 1))
@@ -50,6 +56,14 @@ class QMix(nn.Module):
         q_total = q_total.squeeze(-1) # (batch_size,)
 
         return actions, q_total
+
+    def get_action(self, state, agent_index):
+        agent_policy_network = getattr(self, f"agent_{agent_index}_policy_network")
+        action_mean = agent_policy_network(state)
+        action_dist = MultivariateNormal(action_mean, torch.eye(len(action_mean))) # set covariance matrix later?
+        action = action_dist.sample()
+        log_prob = action_dist.log_prob(action)
+        return action.detach().numpy(), log_prob.detach()
     
 if __name__ == "__main__":
     num_agents = 3

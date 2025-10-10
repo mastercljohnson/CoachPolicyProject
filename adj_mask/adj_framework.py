@@ -23,5 +23,7 @@ class AdjFrame(nn.Module):
     def critic_loss(self, q_total, target_q_total):
         return nn.MSELoss()(q_total, target_q_total)
     
-    def actor_loss(self, q_total, log_probs):
-        pass
+    def actor_loss(self, q_total, returns_to_go, log_probs):
+        adv = q_total - returns_to_go
+       
+        return None
