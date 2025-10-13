@@ -78,7 +78,7 @@ while env_step < total_steps:
         
 
     actions, q_total = algo.forward(observations)  # Forward pass
-    actions = {agent: np.clip(actions[agent],-1.0,1.0) for agent in env.agents}  # Clip actions
+    actions = {agent: np.clip(actions[agent],-1.0,1.0).flatten() for agent in env.agents}  # Clip actions
     
     observations, rewards, terminations, truncations, infos = env.step(actions)
     env_step += 1

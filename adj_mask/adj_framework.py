@@ -17,7 +17,7 @@ class AdjFrame(nn.Module):
     
     def process_actions(self, actions):
         # Convert tensor actions to dictionary format, assume batch size of 1
-        action_dict = {f"walker_{i}": actions[0, i].detach().numpy() for i in range(actions.shape[1])}
+        action_dict = {f"walker_{i}": actions[i] for i in range(len(actions))}
         return action_dict
     
     def critic_loss(self, q_total, target_q_total):

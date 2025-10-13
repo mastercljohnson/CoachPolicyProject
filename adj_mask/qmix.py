@@ -17,7 +17,7 @@ class QMix(nn.Module):
         #     setattr(self, f"agent_{i}_q_network", nn.Linear(state_space[agent].shape[0] + action_space[agent].shape[0], 1))
         for i, agent in enumerate(agents):
             setattr(self, f"agent_{i}_policy_network", nn.Linear(self.hidden_dim, action_space[agent].shape[0]))
-            setattr(self, f"agent_{i}_q_network", nn.Linear(self.hidden_dim + action_space[agent].shape[0], 1))
+            setattr(self, f"agent_{i}_q_network", nn.Linear(self.hidden_dim, 1))
         # self.hyper_network_weight_1 = nn.Linear(self.state_space, hidden_dim*self.num_agents) # W1 weights
         # self.hyper_network_bias_1 = nn.Linear(self.state_space, hidden_dim) # bias
         # self.hyper_network_weight_2 = nn.Linear(self.state_space, hidden_dim) # W2 weights
@@ -30,20 +30,16 @@ class QMix(nn.Module):
         self.hyper_network_bias_2_2 = nn.Linear(hidden_dim, 1) # bias2
     
     def forward(self, states):
-        # print(f"State shape {states.shape}")
         actions = []
         q_values = []
         for i in range(self.num_agents):
             agent_policy_network = getattr(self, f"agent_{i}_policy_network")
-            agent_action = agent_policy_network(states[:, i, :])
-            test_action, log_prob = self.get_action(states[:, i, :], i)
-            print(f"Agent {i} action {test_action.shape} log_prob {log_prob.shape}")
+            agent_action, log_prob = self.get_action(states[:, i, :], i)
             actions.append(agent_action)
             agent_q_network = getattr(self, f"agent_{i}_q_network")
-            agent_q_input = torch.cat([states[:, i, :], agent_action], dim=-1)
+            agent_q_input = states[:, i, :]
             agent_q_value = agent_q_network(agent_q_input)
             q_values.append(agent_q_value)
-        actions = torch.stack(actions, dim=1)
         q_values = torch.cat(q_values, dim=-1)
 
 
