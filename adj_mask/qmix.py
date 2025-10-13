@@ -36,6 +36,8 @@ class QMix(nn.Module):
         for i in range(self.num_agents):
             agent_policy_network = getattr(self, f"agent_{i}_policy_network")
             agent_action = agent_policy_network(states[:, i, :])
+            test_action, log_prob = self.get_action(states[:, i, :], i)
+            print(f"Agent {i} action {test_action.shape} log_prob {log_prob.shape}")
             actions.append(agent_action)
             agent_q_network = getattr(self, f"agent_{i}_q_network")
             agent_q_input = torch.cat([states[:, i, :], agent_action], dim=-1)
@@ -60,7 +62,7 @@ class QMix(nn.Module):
     def get_action(self, state, agent_index):
         agent_policy_network = getattr(self, f"agent_{agent_index}_policy_network")
         action_mean = agent_policy_network(state)
-        action_dist = MultivariateNormal(action_mean, torch.eye(len(action_mean))) # set covariance matrix later?
+        action_dist = MultivariateNormal(action_mean, torch.eye(action_mean.shape[1])) # set covariance matrix later?
         action = action_dist.sample()
         log_prob = action_dist.log_prob(action)
         return action.detach().numpy(), log_prob.detach()
