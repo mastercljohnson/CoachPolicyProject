@@ -15,8 +15,6 @@ class QMix(nn.Module):
         for i, agent in enumerate(agents):
             setattr(self, f"agent_{i}_policy_network", nn.Linear(self.hidden_dim, action_space[agent].shape[0]))
             setattr(self, f"agent_{i}_critic_network", nn.Linear(self.hidden_dim, 1))
-            # setattr(self, f"agent_{i}_p_optimizer", torch.optim.AdamW(getattr(self, f"agent_{i}_policy_network").parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay))
-            # setattr(self, f"agent_{i}_q_optimizer", torch.optim.AdamW(getattr(self, f"agent_{i}_q_network").parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay))
         self.hyper_network_weight_1 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim*self.num_agents) # W1 weights
         self.hyper_network_bias_1 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim) # bias
         self.hyper_network_weight_2 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim) # W2 weights
@@ -68,12 +66,37 @@ class QMix(nn.Module):
         log_prob = action_dist.log_prob(action)
         return action.detach().numpy(), log_prob.detach()
     
+    def evaluate_mixing_network(self, states):
+        
+        #  Get individual agent value network evaluations
+        values = []
+        for i in range(self.num_agents):
+            agent_critic_network = getattr(self, f"agent_{i}_critic_network")
+            state = states[:, i, :]
+            value = agent_critic_network(state)
+            values.append(value)
+
+        # Generate mixing network from hyper network
+        hyper_state = torch.cat([states[:, i, :] for i in range(self.num_agents)], dim=-1)
+        hyper_w1 = torch.abs(self.hyper_network_weight_1(hyper_state).view(-1, self.num_agents, self.hidden_dim))  # (batch_size, self.num_agents, hidden_dim)
+        hyper_b1 = self.hyper_network_bias_1(hyper_state).view(-1, 1, self.hidden_dim)  # (batch_size, 1, hidden_dim)
+        hyper_w2 = torch.abs(self.hyper_network_weight_2(hyper_state).view(-1, self.hidden_dim, 1))  # (batch_size, hidden_dim, 1)
+        hyper_b2_prep = torch.relu(self.hyper_network_bias_2_1(hyper_state).view(-1, self.hidden_dim))  # (batch_size, hidden dim)
+        hyper_b2 = self.hyper_network_bias_2_2(hyper_b2_prep).view(-1, 1)  # (batch_size, 1, 1)
+        
+        # Evaluate using the mixing network
+        hidden = torch.relu(torch.bmm(values.unsqueeze(0), hyper_w1) + hyper_b1)
+        mix_value = torch.bmm(hidden, hyper_w2) + hyper_b2  # (batch_size,  1)
+        mix_value = q_total.squeeze(-1) # (batch_size,)
+
+        return mix_value
+
     def evaluate_agent_state(self, state, agent_index):
-        pass
+        agent_critic_network = getattr(self, f"agent_{agent_index}_critic_network")
+        value = agent_critic_network(state)
+        return value
     
     def learn(self,agent_index, reward):
-        td_diff = reward + gamma * next_q_value - current_q_value
-        A_t = td_diff  # Advantage estimate
         pass
     
 if __name__ == "__main__":
