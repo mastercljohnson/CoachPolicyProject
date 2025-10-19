@@ -23,7 +23,7 @@ class AdjFrame(nn.Module):
             for agent in env.agents:
                 rollout_states[agent].append(observations[agent])
             
-            actions, q_total = self.forward(observations)  # Forward pass
+            actions, q_total = self.act(observations)  # Forward pass
             actions = {agent: np.clip(actions[agent],-1.0,1.0).flatten() for agent in env.agents}  # Clip actions
             observations, rewards, terminations, truncations, infos = env.step(actions)
             rtg += sum(rewards.values()) if rewards else 0
@@ -37,7 +37,7 @@ class AdjFrame(nn.Module):
         return rollout_states, rollout_actions, returns_to_go
 
 
-    def forward(self, x):
+    def act(self, x):
         x = torch.stack([torch.tensor(state) for state in x.values()], dim=0).unsqueeze(0) # (1,3,31)
         x  = self.adj_mask_layer(x)
         actions, q_total = self.qmix(x)
