@@ -34,6 +34,8 @@ class AdjFrame(nn.Module):
 
             termination_signal = any(terminations.values()) or any(truncations.values())
         
+        env.close() # Close environment after rollout locally.
+        
         return rollout_states, rollout_actions, returns_to_go
 
 

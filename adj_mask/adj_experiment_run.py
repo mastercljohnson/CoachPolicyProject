@@ -21,9 +21,5 @@ observations, infos = env.reset()
 # hidden dim right now needs to match observation dimensions
 algo = AdjFrame(3, env.agents,60,60, env.observation_spaces, env.action_spaces)
 
+#  Test rollout
 algo.rollout(300, env)
-
-
-    
-
-env.close()
