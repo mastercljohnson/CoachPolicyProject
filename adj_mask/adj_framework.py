@@ -11,13 +11,30 @@ class AdjFrame(nn.Module):
         self.qmix = QMix(agents, state_space, action_space, q_hidden_dim, **kwargs)
     
     def rollout(self, timesteps, env):
+        rollout_states = {agent:[] for agent in env.agents}
+        rollout_actions = {agent:[] for agent in env.agents}
+        returns_to_go = {agent:[] for agent in env.agents}
+        rtg = 0
         for t in range(timesteps):
             if t ==0 or termination_signal:
                 observations, infos = env.reset()
+                rtg = 0
+            
+            for agent in env.agents:
+                rollout_states[agent].append(observations[agent])
+            
             actions, q_total = self.forward(observations)  # Forward pass
             actions = {agent: np.clip(actions[agent],-1.0,1.0).flatten() for agent in env.agents}  # Clip actions
             observations, rewards, terminations, truncations, infos = env.step(actions)
+            rtg += sum(rewards.values()) if rewards else 0
+
+            for agent in env.agents:
+                rollout_actions[agent].append(actions[agent])
+                returns_to_go[agent].append(rtg)
+
             termination_signal = any(terminations.values()) or any(truncations.values())
+        
+        return rollout_states, rollout_actions, returns_to_go
 
 
     def forward(self, x):
