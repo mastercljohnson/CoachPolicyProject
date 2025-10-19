@@ -47,14 +47,6 @@ class AdjFrame(nn.Module):
         # Convert tensor actions to dictionary format, assume batch size of 1
         action_dict = {f"walker_{i}": actions[i] for i in range(len(actions))}
         return action_dict
-    
-    def critic_loss(self, q_total, target_q_total):
-        return nn.MSELoss()(q_total, target_q_total)
-    
-    def actor_loss(self, q_total, returns_to_go, log_probs):
-        adv = q_total - returns_to_go
-       
-        return None
 
 # if __name__ == "__main__":
     # test = AdjFrame(n_head=2, agents=3, hidden_dim=64, q_hidden_dim=128, state_space=31, action_space=3)
