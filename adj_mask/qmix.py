@@ -15,8 +15,8 @@ class QMix(nn.Module):
         for i, agent in enumerate(agents):
             setattr(self, f"agent_{i}_policy_network", nn.Linear(self.hidden_dim, action_space[agent].shape[0]))
             setattr(self, f"agent_{i}_q_network", nn.Linear(self.hidden_dim, 1))
-            setattr(self, f"agent_{i}_p_optimizer", torch.optim.AdamW(getattr(self, f"agent_{i}_policy_network").parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay))
-            setattr(self, f"agent_{i}_q_optimizer", torch.optim.AdamW(getattr(self, f"agent_{i}_q_network").parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay))
+            # setattr(self, f"agent_{i}_p_optimizer", torch.optim.AdamW(getattr(self, f"agent_{i}_policy_network").parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay))
+            # setattr(self, f"agent_{i}_q_optimizer", torch.optim.AdamW(getattr(self, f"agent_{i}_q_network").parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay))
         self.hyper_network_weight_1 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim*self.num_agents) # W1 weights
         self.hyper_network_bias_1 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim) # bias
         self.hyper_network_weight_2 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim) # W2 weights
@@ -24,7 +24,7 @@ class QMix(nn.Module):
 
         self.hyper_network_bias_2_2 = nn.Linear(hidden_dim, 1) # bias2
 
-        self.hyper_network_optimizer = torch.optim.AdamW(list(self.hyper_network_weight_1.parameters()) + list(self.hyper_network_bias_1.parameters()) + list(self.hyper_network_weight_2.parameters()) + list(self.hyper_network_bias_2_1.parameters()) + list(self.hyper_network_bias_2_2.parameters()), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay)
+        # self.hyper_network_optimizer = torch.optim.AdamW(list(self.hyper_network_weight_1.parameters()) + list(self.hyper_network_bias_1.parameters()) + list(self.hyper_network_weight_2.parameters()) + list(self.hyper_network_bias_2_1.parameters()) + list(self.hyper_network_bias_2_2.parameters()), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay)
     
     def forward(self, states):
         actions = []
@@ -59,6 +59,11 @@ class QMix(nn.Module):
         action = action_dist.sample()
         log_prob = action_dist.log_prob(action)
         return action.detach().numpy(), log_prob.detach()
+    
+    def learn(self,agent_index, reward):
+        td_diff = reward + gamma * next_q_value - current_q_value
+        A_t = td_diff  # Advantage estimate
+        pass
     
 if __name__ == "__main__":
     num_agents = 3

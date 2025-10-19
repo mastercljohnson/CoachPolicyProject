@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from adj_mask import AdjMask
 from qmix import QMix
+import numpy as np
 
 class AdjFrame(nn.Module):
     def __init__(self, n_head ,agents, hidden_dim, q_hidden_dim, state_space, action_space, adj_mask=None, **kwargs):
@@ -9,6 +10,16 @@ class AdjFrame(nn.Module):
         self.adj_mask_layer = AdjMask(n_head, hidden_dim, state_space, adj_mask=adj_mask, **kwargs)
         self.qmix = QMix(agents, state_space, action_space, q_hidden_dim, **kwargs)
     
+    def rollout(self, timesteps, env):
+        for t in range(timesteps):
+            if t ==0 or termination_signal:
+                observations, infos = env.reset()
+            actions, q_total = self.forward(observations)  # Forward pass
+            actions = {agent: np.clip(actions[agent],-1.0,1.0).flatten() for agent in env.agents}  # Clip actions
+            observations, rewards, terminations, truncations, infos = env.step(actions)
+            termination_signal = any(terminations.values()) or any(truncations.values())
+
+
     def forward(self, x):
         x = torch.stack([torch.tensor(state) for state in x.values()], dim=0).unsqueeze(0) # (1,3,31)
         x  = self.adj_mask_layer(x)
@@ -27,3 +38,7 @@ class AdjFrame(nn.Module):
         adv = q_total - returns_to_go
        
         return None
+
+# if __name__ == "__main__":
+    # test = AdjFrame(n_head=2, agents=3, hidden_dim=64, q_hidden_dim=128, state_space=31, action_space=3)
+    # print(test)

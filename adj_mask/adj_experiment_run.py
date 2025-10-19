@@ -4,9 +4,9 @@ import torch
 import numpy as np
 import math
 
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
-writer = SummaryWriter(log_dir="./runs/exp1")
+# writer = SummaryWriter(log_dir="./runs/exp1")
 
 # observation is a dictionary with keys as agent names and values as their respective observations
 # action is a dictionary with keys as agent names and values as their respective actions
@@ -18,6 +18,8 @@ observations, infos = env.reset()
 
 # hidden dim right now needs to match observation dimensions
 algo = AdjFrame(3, env.agents,60,60, env.observation_spaces, env.action_spaces)
+
+algo.rollout(300, env)
 
 rewards = None
 
@@ -64,8 +66,8 @@ while env_step < total_steps:
 
     if termination_signal:
         #  Log to TensorBoard when an episode ends
-        writer.add_scalar("Scaled Reward per timestep/episode", cumulative_rewards/local_step, episode)
-        writer.add_scalar("Loss/episode", q_acc, episode)
+        # writer.add_scalar("Scaled Reward per timestep/episode", cumulative_rewards/local_step, episode)
+        # writer.add_scalar("Loss/episode", q_acc, episode)
 
         # Reset the environment
         episode += 1
