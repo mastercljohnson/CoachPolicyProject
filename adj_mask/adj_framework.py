@@ -23,7 +23,7 @@ class AdjFrame(nn.Module):
             for agent in env.agents:
                 rollout_states[agent].append(observations[agent])
             
-            actions, q_total = self.act(observations)  # Forward pass
+            actions = self.act(observations)  # Forward pass
             actions = {agent: np.clip(actions[agent],-1.0,1.0).flatten() for agent in env.agents}  # Clip actions
             observations, rewards, terminations, truncations, infos = env.step(actions)
             rtg += sum(rewards.values()) if rewards else 0
@@ -39,9 +39,9 @@ class AdjFrame(nn.Module):
 
     def act(self, x):
         x = torch.stack([torch.tensor(state) for state in x.values()], dim=0).unsqueeze(0) # (1,3,31)
-        x  = self.adj_mask_layer(x)
-        actions, q_total = self.qmix(x)
-        return self.process_actions(actions), q_total
+        x  = self.adj_mask_layer(x) # Use self attention with adjacency mask
+        actions = self.qmix.act(x)
+        return self.process_actions(actions)
     
     def process_actions(self, actions):
         # Convert tensor actions to dictionary format, assume batch size of 1

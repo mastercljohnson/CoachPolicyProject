@@ -51,6 +51,14 @@ class QMix(nn.Module):
         q_total = q_total.squeeze(-1) # (batch_size,)
 
         return actions, q_total
+    
+    def act(self, states):
+        actions = []
+        for i in range(self.num_agents):
+            state = states[:, i, :]
+            action, act_log_prob  = self.get_action(state, i)
+            actions.append(action)
+        return actions
 
     def get_action(self, state, agent_index):
         agent_policy_network = getattr(self, f"agent_{agent_index}_policy_network")
