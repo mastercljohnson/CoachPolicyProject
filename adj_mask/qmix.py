@@ -14,7 +14,7 @@ class QMix(nn.Module):
 		# self.cov_mat = torch.diag(self.cov_var)
         for i, agent in enumerate(agents):
             setattr(self, f"agent_{i}_policy_network", nn.Linear(self.hidden_dim, action_space[agent].shape[0]))
-            setattr(self, f"agent_{i}_q_network", nn.Linear(self.hidden_dim, 1))
+            setattr(self, f"agent_{i}_critic_network", nn.Linear(self.hidden_dim, 1))
             # setattr(self, f"agent_{i}_p_optimizer", torch.optim.AdamW(getattr(self, f"agent_{i}_policy_network").parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay))
             # setattr(self, f"agent_{i}_q_optimizer", torch.optim.AdamW(getattr(self, f"agent_{i}_q_network").parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay))
         self.hyper_network_weight_1 = nn.Linear(self.hidden_dim*self.num_agents, hidden_dim*self.num_agents) # W1 weights
@@ -33,9 +33,9 @@ class QMix(nn.Module):
             agent_policy_network = getattr(self, f"agent_{i}_policy_network")
             agent_action, log_prob = self.get_action(states[:, i, :], i)
             actions.append(agent_action)
-            agent_q_network = getattr(self, f"agent_{i}_q_network")
+            agent_critic_network = getattr(self, f"agent_{i}_critic_network")
             agent_q_input = states[:, i, :]
-            agent_q_value = agent_q_network(agent_q_input)
+            agent_q_value = agent_critic_network(agent_q_input)
             q_values.append(agent_q_value)
         q_values = torch.cat(q_values, dim=-1)
 
@@ -67,6 +67,9 @@ class QMix(nn.Module):
         action = action_dist.sample()
         log_prob = action_dist.log_prob(action)
         return action.detach().numpy(), log_prob.detach()
+    
+    def evaluate_agent_state(self, state, agent_index):
+        pass
     
     def learn(self,agent_index, reward):
         td_diff = reward + gamma * next_q_value - current_q_value
