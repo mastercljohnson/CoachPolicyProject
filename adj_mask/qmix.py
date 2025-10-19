@@ -69,13 +69,3 @@ class QMix(nn.Module):
     
     def learn(self,agent_index, reward):
         pass
-    
-if __name__ == "__main__":
-    num_agents = 3
-    state_space = 10
-    action_space = 4
-    model = QMix(num_agents, state_space, action_space)
-    print(model)
-    states = torch.randn(5, num_agents, state_space)  # (batch_size, num_agents, state_space)
-    output = model(states)
-    print(output.shape)  # should be (5, num_agents, action_space)

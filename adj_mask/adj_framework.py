@@ -47,7 +47,3 @@ class AdjFrame(nn.Module):
         # Convert tensor actions to dictionary format, assume batch size of 1
         action_dict = {f"walker_{i}": actions[i] for i in range(len(actions))}
         return action_dict
-
-# if __name__ == "__main__":
-    # test = AdjFrame(n_head=2, agents=3, hidden_dim=64, q_hidden_dim=128, state_space=31, action_space=3)
-    # print(test)
